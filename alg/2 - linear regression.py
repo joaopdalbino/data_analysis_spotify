@@ -5,8 +5,18 @@ from os.path import dirname, abspath
 import pandas as pd
 import numpy as np
 import csv
+import statsmodels.api as sm
 
 path = dirname(dirname(abspath(__file__)))
+
+columns_collinearity = []
+
+if(len(columns_collinearity)): 
+	title = '_without_'
+else:
+	title = ''
+
+for f in columns_collinearity: title = f + '_' + title
 
 def get_indicators_of_linear_regression(x, y):
 	return stats.linregress(x, y)
@@ -14,15 +24,21 @@ def get_indicators_of_linear_regression(x, y):
 def load_database():
 	return pd.read_csv(path + '/results/data/spotify_numerical_features_only.csv')
 
+def get_best_columns_with_forward_selection(indicators):
+	# ordering by smallest p value
+	# and selection only p values with 5% of significance
+	indicators = indicators.sort_values(by=['p_value'], ascending=True)
+
+	return indicators.loc[indicators['p_value'] <= 0.05]
+
 def create_plot(slope, intercept, x, y, x_title, y_title):
 	plt.plot(x, y, 'o', label='original data')
 	plt.plot(x, intercept + slope*x, 'r', label='fitted line')
 	plt.title('linear regression of ' + x_title + ' and ' + y_title)
-	plt.savefig(path+'/results/linear regression/' + x_title + '.png')
+	plt.savefig(path+'/results/linear regression/' + x_title + title + '.png')
 	plt.clf()
 
 def get_all_indicators_by_column(y, df):
-
 	data = pd.DataFrame(columns=['y', 'x', 'slope', 'intercept', 'r_value', 'p_value', 'std_err'])
 
 	for column in df.columns.tolist():
@@ -45,9 +61,7 @@ def get_all_indicators_by_column(y, df):
 	return data
 
 def get_all_correlations(df):
-
-
-	with open(path + '/results/linear regression/2 - all correlations to be compared.csv', mode='w') as correlation_file:
+	with open(path + '/results/linear regression/2 - all correlations to be compared' + title + '.csv', mode='w') as correlation_file:
 
 		correlation_writer = csv.writer(correlation_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
 
@@ -76,6 +90,8 @@ def get_all_correlations(df):
 
 			correlation_writer.writerow(x)
 
+	return pd.read_csv(path + '/results/linear regression/2 - all correlations to be compared' + title + '.csv')
+
 def get_all_features_correlations_from_given_y(y, columns, df):
 	
 	x = []
@@ -87,6 +103,80 @@ def get_all_features_correlations_from_given_y(y, columns, df):
 
 	return x
 
+def get_which_one_is_the_best_linear_regression_for_this_problem(df, indicators, y):
+
+	indicators = get_best_columns_with_forward_selection(indicators)
+
+	col = 0
+
+	data = df[ [y, indicators['x'].iloc[col]]]
+
+	flag = False
+	max_p_value = 0
+
+	while(len(data.columns.tolist()) < len(indicators['x']) + 1):
+		
+		X = sm.add_constant(data.drop(columns = [y], axis=1))
+
+		est = sm.OLS(data[y], X)
+		est = est.fit()
+
+		results_summary = est.summary()
+
+		max_p_value = est.pvalues.max()
+
+		if(max_p_value >= 0.05):
+
+			X = sm.add_constant(data.drop(columns = [y, indicators['x'].iloc[col]], axis=1))
+			est = sm.OLS(data[y], X)
+			est = est.fit()
+			results_summary = est.summary()
+			text_file = open(path + '/results/linear regression/3 - forward_selection' + title + '.csv', mode='w')
+			text_file.write(results_summary.as_csv())
+			text_file.close()
+			return 0
+		else:
+			col+=1
+			data = data.join(df[indicators['x'].iloc[col]])
+
+	X = sm.add_constant(data.drop(columns = [y], axis=1))
+	est = sm.OLS(data[y], X)
+	est = est.fit()
+	results_summary = est.summary()
+	text_file = open(path + '/results/linear regression/3 - forward_selection' + title + '.csv', mode='w')
+	text_file.write(results_summary.as_csv())
+	text_file.close()
+	return 0
+		
+def get_columns_to_be_dropped_as_they_have_collinearity(all_correlations):
+	
+	cor = pd.read_csv(path + '/results/data/correlation_of_numerical_features' + title + '.csv')
+	cor = cor.reindex(cor.correlation.abs().sort_values(ascending=True).index)
+
+	data = pd.DataFrame(columns=['c1', 'c2'])
+
+	columns = all_correlations.drop(columns = ['Unnamed: 0'], axis=1).columns.tolist()
+
+	r_columns = []
+
+	for column in all_correlations.drop(columns = ['Unnamed: 0'], axis=1).columns.tolist():
+		aux = all_correlations.loc[(all_correlations[column].abs() >= 0.7) & (all_correlations[column].abs() < 1.0)]
+
+		if(len(aux[column])):
+			h_1 = column
+			h_2 = columns[aux[column].index[0]]
+			print('h 1 = ' + h_1)
+			print('h 2 = ' + h_2)
+			for c in cor['column']:
+				if(c == h_1):
+					r_columns.append(h_1)
+					break
+				if(c == h_2):
+					r_columns.append(h_2)
+					break
+
+	return r_columns
+
 if __name__ == "__main__":
 
 	print('loading database...')
@@ -94,10 +184,20 @@ if __name__ == "__main__":
 
 	y = 'popularity'
 
+	df = df.drop(columns = columns_collinearity, axis=1)
+
 	print('creating linear regression indicators based on ' + y + ' ...')
-	get_all_indicators_by_column(y, df).to_csv(path+'/results/linear regression/2 - linear_regression_indicators.csv',index=False)
+	linear_regression_indicators = get_all_indicators_by_column(y, df)
+	linear_regression_indicators.to_csv(path+'/results/linear regression/1 - linear_regression_indicators' + title + '.csv',index=False)
 
 	print('checking all correlations...')
-	get_all_correlations(df)
+	all_correlations = get_all_correlations(df)
+
+	columns_to_be_dropped = get_columns_to_be_dropped_as_they_have_collinearity(all_correlations)
+
+	print('get the best fit for linear regression...')
+	r = get_which_one_is_the_best_linear_regression_for_this_problem(df, linear_regression_indicators, y)
 
 	print('... finishing.')
+
+	

@@ -2,13 +2,13 @@ import pandas as pd
 from pathlib import Path
 import os
 from os.path import dirname, abspath
+import ast 
 import numpy as np
 from scipy import stats
 import statsmodels.api as sm
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -17,7 +17,7 @@ backlash = '/'
 # Loads CSV file as Dataframe
 def data_load_csv(file, path):
 	try:
-		return pd.read_csv(path + file)
+		return pd.read_csv(path + backlash + file)
 	except:
 		return None
 
@@ -29,12 +29,12 @@ def save_df_to_csv(df, path, file):
 def data_remove_duplicates_from_df(df, key):
 	return df.drop_duplicates(subset=[key], keep=False)
 
-# Binary normalizador
+# Normalizes to binary
 def data_normalizer(row, column, value):
 	if row[column] == value: return 1
 	else: return 0
 
-# Drop column
+# Drops column
 def data_drop_column(df, column):
 	return df.drop(column, axis=1)
 
@@ -47,6 +47,23 @@ def data_create_columns_on_df(df, column, value):
 def data_clean_categorical_values(df):
 	df = df.iloc[:,3:]
 	return df
+
+# Converts string to list
+def string_to_list(string):
+	return ast.literal_eval(string)
+
+# Sorts by the best features indicators
+def sort_by_best_features(df, model):
+
+	if(model == 'linear'):
+		df = df.sort_values(by=['adjusted_r^2', 'r^2'], ascending=False)
+		df = df.sort_values(by=['BIC', 'AIC', 'RSS'], ascending=True)
+
+	return df
+
+# Shuffles Data from dataframe
+def shuffle_data(df):
+	return df.sample(frac=1).reset_index(drop=True)
 
 # * ------ FUNCTIONS TO DEAL WITH DATASET * --------
 def forward_stepwise_selection(X, y):
@@ -78,7 +95,7 @@ def forward_stepwise_selection(X, y):
 			'y': y.columns.tolist(), 
 			'x': collumns_to_be_in_model, 
 			'r^2': r_squared,
-			'adjusted_r_r^2': adjusted_rsquared,
+			'adjusted_r^2': adjusted_r_squared,
 			'RSS': rss,
 			'BIC': BIC, 
 			'AIC': AIC
@@ -120,9 +137,38 @@ def find_best_model(X, y, collumns_to_be_in_model, columns):
 
 		X_func = data_drop_column(X_func, column)
 
-	return r_squared, adjusted_r_squared, rss, best_columns, AIC, BIC
+	return r_squared, rss, adjusted_r_squared, best_columns, AIC, BIC
+
+def create_blocks_cross_validations(df, k_size):
+	if(k_size < 2):
+		print('K fold must be greater or equal to 2')
+		return 0, 0
+
+	df_size = len(df)
+
+	block_size = int(df_size/k_size)
+
+	indexes = []
+
+	aux = 0
+
+	for i in range(1, k_size+1):
+		if(i > 2):
+			aux += block_size
+		elif(i == 2):
+			aux += block_size-1
+		indexes.append(aux)
+
+	return block_size, indexes
+
+
 # * ------ FUNCTIONS TO DEAL WITH DATASET * --------
 
+
+# * ------ FUNCTIONS TO DEAL WITH CROSS VALIDATION * --------
+def get_data_from_K(X, y, portion):
+	return train_test_split(X, y, test_size=portion)
+# * ------ FUNCTIONS TO DEAL WITH CROSS VALIDATION * --------
 
 
 # * ------ FUNCTION TO USE LINEAR REGRESSION * --------

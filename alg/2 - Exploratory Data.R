@@ -54,7 +54,7 @@ dev.off()
 '--- DENSITY OF FEATURES ---'
 pdf(paste(path_to_save_imgs,"Features Density_q_4.pdf"))
 par(mfrow=c(1,3))
-for(i in 4:length(data)) {
+for(i in 1:3) {
   plot(density(data[,i]), main=names(data)[i])
 }
 dev.off()
